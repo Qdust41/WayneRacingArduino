@@ -8,7 +8,7 @@ class ThermocoupleCounter {
 public:
   ThermocoupleCounter(int clkPin, int csPin, int doPin, int counterClkPin);
   void begin();
-  void update();
+  int update();
 private:
   Adafruit_MAX31855 thermocouple;
   int counterClkPin;
