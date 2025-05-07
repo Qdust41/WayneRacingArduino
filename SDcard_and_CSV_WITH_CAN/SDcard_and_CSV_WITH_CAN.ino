@@ -27,10 +27,16 @@ bool addrow() {
     for (int i = 0; i<canMsg.can_dlc; i++)  {  // print the data
       total_data += int(canMsg.data[i]);
     }
-    if(canMsg.can_id == 0x0F6){
+    switch(canMsg.can_id){
+    case(0x0F6):
       id1_data = total_data/canMsg.can_dlc;
-    }else{
+      break;
+    case(0x036): 
       id2_data = total_data/canMsg.can_dlc;
+      break;
+    default:
+      Serial.println("ERR");
+      break;
     }
   }
   if (dbFile) {
