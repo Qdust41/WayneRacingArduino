@@ -4,13 +4,31 @@
 #include <mcp2515.h>
 #include <mcp2515_defs.h>
 #include <ThermocoupleCounter.h>
-
+#include <SoftwareSerial.h>
+#include <genieArduino.h>
 
 unsigned long currentTimeMillis = millis();
 float currentTimeSeconds = currentTimeMillis / 1000.0;
 struct can_frame canMsg;
 MCP2515 mcp2515(10);
 
+Genie genie;
+SoftwareSerial DisplaySerial(10, 11);
+
+// RPM Gauge Settings
+#define TICKS_PER_1000_RPM 5  // Adjust ticks per 1000 RPM
+#define RED_RPM_THRESHOLD 8000  // RPM where gauge turns red
+#define SHIFT_RPM_THRESHOLD 9000  // RPM where shift alert triggers
+
+// Flashing LED Variables
+bool shiftAlertState = false;
+bool sensorFailureState = false;
+unsigned long lastBlinkTime = 0;
+const int blinkInterval = 500; // 500ms blink rate
+int data = 0;
+int oilPressure =0;
+
+ThermocoupleCounter tempSensor(3, 4, 5, 11); //clkPin, csPin, doPin, counterClkPin
 
 int total_data = 0;
 int id1_data = 0;
@@ -22,6 +40,122 @@ EvtManager mgr(true); // true to manage memory
 
 // Sets up dbFile as our 'global' variable for our SD card file
 File dbFile;
+
+void displayUpdate(){
+
+  if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
+    for (int i = 0; i<canMsg.can_dlc; i++)  {  // print the data
+      data += int(canMsg.data[i]);
+    }
+    // Decode RPM
+    if (canMsg.can_id == 0x123) {  // Replace with actual EL129 CAN ID for RPM
+      int rpm = data/canMsg.can_dlc;
+      Serial.print("RPM: "); Serial.println(rpm);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 0, rpm);  // Update RPM display
+
+      // Update RPM Gauge
+      int gaugeValue = (rpm / 1000) * TICKS_PER_1000_RPM;
+      genie.WriteObject(GENIE_OBJ_GAUGE, 0, gaugeValue);
+
+      // Change gauge color based on RPM
+      if (rpm >= RED_RPM_THRESHOLD) {
+        genie.WriteObject(GENIE_OBJ_USER_LED, 0, 1); // Turn gauge RED
+      } else {
+        genie.WriteObject(GENIE_OBJ_USER_LED, 0, 0); // Keep gauge GREEN
+      }
+
+      // Shift alert logic
+      if (rpm >= SHIFT_RPM_THRESHOLD) {
+        shiftAlertState = true;
+      } else {
+        shiftAlertState = false;
+      }
+    }
+
+    // Decode Oil Temp
+    if (canMsg.can_id == 0x456) {  
+      int oilTemp = data/canMsg.can_dlc;
+      Serial.print("Oil Temp: "); Serial.println(oilTemp);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 1, oilTemp);
+    }
+
+    // Decode Oil Pressure
+    if (canMsg.can_id == 0x789) {  
+      oilPressure = data/canMsg.can_dlc;
+      Serial.print("Oil Pressure: "); Serial.println(oilPressure);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 2, oilPressure);
+    }
+
+    // Decode Fuel Pressure
+    if (canMsg.can_id == 0xABC) {  
+      int fuelPressure = data/canMsg.can_dlc;
+      Serial.print("Fuel Pressure: "); Serial.println(fuelPressure);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 3, fuelPressure);
+    }
+
+    // Decode Coolant Temp In (°C)
+    if (canMsg.can_id == 0xDEF) {  
+      int coolantTempIn = data/canMsg.can_dlc;
+      Serial.print("Coolant Temp In (°C): "); Serial.println(coolantTempIn);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 4, coolantTempIn);
+    }
+
+    // Decode Coolant Temp Out (°C)
+    if (canMsg.can_id == 0x101) {  
+      int coolantTempOut = data/canMsg.can_dlc;
+      Serial.print("Coolant Temp Out (°C): "); Serial.println(coolantTempOut);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 5, coolantTempOut);
+    }
+
+    // Decode Gear Position (1-digit display)
+    if (canMsg.can_id == 0x202) {  
+      int gearPosition = data/canMsg.can_dlc;
+      Serial.print("Gear Position: "); Serial.println(gearPosition);
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, 6, gearPosition);
+    }
+
+
+    // Sensor failure detection (example: if oil pressure reads 255, consider it an error)
+    if (oilPressure == 255) {  
+      sensorFailureState = true;
+    } else {
+      sensorFailureState = false;
+    }
+  }
+
+  // Handle Flashing Alerts
+  handleFlashingAlerts();
+
+  genie.DoEvents();
+  delay(100);
+}
+
+// Function to handle flashing LED indicators
+void handleFlashingAlerts() {
+  unsigned long currentTime = millis();
+
+  if (currentTime - lastBlinkTime >= blinkInterval) {
+    lastBlinkTime = currentTime;
+
+    // Flash Shift Alert LED (Primitive Circle 1)
+    if (shiftAlertState) {
+      static bool shiftLedState = false;
+      shiftLedState = !shiftLedState;
+      genie.WriteObject(GENIE_OBJ_USER_LED, 1, shiftLedState);
+    } else {
+      genie.WriteObject(GENIE_OBJ_USER_LED, 1, 0);
+    }
+
+    // Flash Sensor Failure Alert LED (Primitive Circle 2)
+    if (sensorFailureState) {
+      static bool sensorLedState = false;
+      sensorLedState = !sensorLedState;
+      genie.WriteObject(GENIE_OBJ_USER_LED, 2, sensorLedState);
+    } else {
+      genie.WriteObject(GENIE_OBJ_USER_LED, 2, 0);
+    }
+  }
+}
 
 // Slightly messy code to add rows to the CSV file
 bool addrow() {
@@ -45,6 +179,10 @@ bool addrow() {
   }
   
   //live updates the temp of thermocoupler
+  int temp = 0;
+  int iternal = 0;
+  temp, iternal = tempSensor.update();
+  
   if (dbFile) { //prints rows
     dbFile.print(millis());
     dbFile.print(",");
@@ -128,7 +266,9 @@ bool addrow() {
     dbFile.print(analogRead(A10)); 
     dbFile.print(",");
     dbFile.println(analogRead(A11));
-      
+    
+    displayUpdate();
+  
   } else {
     // This should be unrechable but just in case for logging to the serial output
     Serial.println("Issue adding row to file");
@@ -139,9 +279,13 @@ bool addrow() {
 void setup() {
   // Setup for the SD card
   pinMode(10, OUTPUT);
+  tempSensor.begin();
   mcp2515.reset();
   mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
   mcp2515.setNormalMode();
+  DisplaySerial.begin(9600); // UART to display
+  genie.Begin(DisplaySerial);
+  genie.WriteContrast(15);
   Serial.begin(500000);
   if (!SD.begin(chipSelect)) {
     Serial.println("SD card initialization failed!");
