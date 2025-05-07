@@ -2,12 +2,12 @@
 #include "Adafruit_MAX31855.h"
 
 // MAX31855 SPI pins
-#define MAXCLK 3 // Must be pwm
-#define MAXCS  4 // digital
-#define MAXDO  5 // Must be pwm
+#define MAXCLK 3 // Must be pwm (Max Clock)
+#define MAXCS  4 // digital (Chipselect)
+#define MAXDO  5 // Must be pwm (Digital Output)
 
 // Counter clock pin These pins will have to be changed
-#define COUNTER_CLK 11 //Must be pwm
+#define COUNTER_CLK 11 //Must be pwm (Unknown)
 
 
 Adafruit_MAX31855 thermocouple(MAXCLK, MAXCS, MAXDO);
