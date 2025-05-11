@@ -88,8 +88,24 @@ void setup() {
 
 int sensor_data = 0; // This is the value for the sensor defined by its ID header and then the average across the 8 points of value
 void loop() {
-    // put your main code here, to run repeatedly:
   digitalWrite(10, LOW);
+
+  sensor_decoding();
+
+  if(rpm >= 11000){
+    shiftAlertState = true;
+  }else{
+    shiftAlertState = false;
+  }
+
+  fail_alerts();
+
+  genie.DoEvents();
+  digitalWrite(10, HIGH);
+}
+
+
+void sensor_decoding() {
   sensor_data = 0;
   if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
     Serial.println(canMsg.can_id);
@@ -98,53 +114,42 @@ void loop() {
     }   
   }
   sensor_data /= canMsg.can_dlc;
-  
-  if(canMsg.can_id == CAN_IDX_RPM){
-    rpm = sensor_data;
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_RPM, rpm);
-  }
 
-  if(rpm >= 11000){
-    shiftAlertState = true;
-  }else{
-    shiftAlertState = false;
-  }
+  switch (canMsg.can_id) {
+    case (CAN_IDX_RPM):
+      rpm = sensor_data;
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_RPM, rpm);
+      break;
+    case (CAN_IDX_GEAR):
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_GEAR, sensor_data);
+      break;
+    case (CAN_IDX_COOL_IN):
+      lastCoolIn = sensor_data;
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_COOL_IN, sensor_data);
+      break;
+    case (CAN_IDX_COOL_OUT):
+      lastCoolOut = sensor_data;
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_COOL_OUT, sensor_data);
+      break;
+    case (CAN_IDX_FUEL_PRESS):
+      lastFuelPress = sensor_data;
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_FUEL_PRESSURE, sensor_data);
+      break;
+    case (CAN_IDX_OIL_TEMP):
+      lastOilTemp = sensor_data;
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_OIL_TEMP, sensor_data);
+      break;
+    case (CAN_IDX_OIL_PRESS):
+      lastOilPress = sensor_data;
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_OIL_PRESSURE, sensor_data);
+      break;
+    default:
+      // Needs to be changed
+      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_RPM, sensor_data);
+    }
+}
 
-  //Gear Update
-  if(canMsg.can_id == CAN_IDX_GEAR){
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_GEAR, sensor_data);
-  }
-  
-  //Coolant In Update
-  if(canMsg.can_id == CAN_IDX_COOL_IN && lastCoolIn != sensor_data){
-    lastCoolIn = sensor_data;
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_COOL_IN, lastCoolIn);
-  }
-
-  //Coolant Out Update
-  if(canMsg.can_id == CAN_IDX_COOL_OUT && lastCoolOut != sensor_data){
-    lastCoolOut = sensor_data;
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_COOL_OUT, lastCoolOut);
-  }
-
-  //Fuel Pressure Update
-  if(canMsg.can_id == CAN_IDX_FUEL_PRESS && lastFuelPress != sensor_data){
-    lastFuelPress = sensor_data;
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_FUEL_PRESSURE, lastFuelPress);
-  }
-
-  //Oil Temp Update
-  if(canMsg.can_id == CAN_IDX_OIL_TEMP && lastOilTemp != sensor_data){
-    lastOilTemp = sensor_data;
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_OIL_TEMP, lastOilTemp);
-  }
-
-  //Oil Press Update
-  if(canMsg.can_id == CAN_IDX_OIL_PRESS && lastOilPress != sensor_data){
-    lastOilPress = sensor_data;
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_OIL_PRESSURE, lastOilPress);
-  }
-  
+void fail_alerts() {
   //Gear Shift Alert
   if(shiftAlertState == true){
     if(millis() - lastShiftBlinkTimeOn >= blinkIntervalOn){
@@ -161,14 +166,13 @@ void loop() {
     stateShiftAlert = 0;
     genie.WriteObject(GENIE_OBJ_ILED, 0, stateShiftAlert);
   }
-
   //Sensor Failure
   if(lastFuelPress >= 100 || lastOilPress >= 100 || lastOilPress <= 0){
     sensorFailureState = true;
   }else{
     sensorFailureState = false;
   }
-
+  //Checking if the sensor did fail
   if(sensorFailureState == true){
     if(millis() - lastSensorBlinkTimeOn >= blinkIntervalOn){
       lastSensorBlinkTimeOn = millis();
@@ -184,9 +188,6 @@ void loop() {
     stateSensorAlert = 0;
     genie.WriteObject(GENIE_OBJ_ILED, 1, stateSensorAlert);
   }
-
-  genie.DoEvents();
-  digitalWrite(10, HIGH);
 }
 
  
