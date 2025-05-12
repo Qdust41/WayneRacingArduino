@@ -2,7 +2,6 @@
 #include <SPI.h>
 #include <Eventually.h>
 #include <mcp2515.h>
-#include <mcp2515_defs.h>
 #include <ThermocoupleCounter.h>
 
 
@@ -24,7 +23,7 @@ EvtManager mgr(true); // true to manage memory
 File dbFile;
 
 // Slightly messy code to add rows to the CSV file
-bool addrow() {
+void addrow() {
   if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) { // reads CAN messages
     total_data = 0;
     for (int i = 0; i<canMsg.can_dlc; i++)  {  // collects data for that message id
@@ -160,24 +159,6 @@ void setup() {
     Serial.println("Failed to open file for writing.");
     while (1) {}; //Should be unrechable but just in case again
   }
-
-  // Setup for the event handler (this is in case we opt for some event based system instead)
-  pinMode(A0, INPUT);
-  pinMode(A1, INPUT);
-  pinMode(A2, INPUT);
-  pinMode(A3, INPUT);
-  pinMode(A4, INPUT);
-  pinMode(A5, INPUT);
-  pinMode(A6, INPUT);
-  pinMode(A7, INPUT);
-  pinMode(A8, INPUT);
-  pinMode(A9, INPUT);
-  pinMode(A10, INPUT);
-  pinMode(A11, INPUT);
-  pinMode(A12, INPUT);
-  pinMode(A13, INPUT);
-  pinMode(A14, INPUT);
-  pinMode(A15, INPUT);
 
   digitalWrite(10, LOW);
   

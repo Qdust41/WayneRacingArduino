@@ -6,13 +6,17 @@
 const int chipSelect = 53;
 struct can_frame canMsg;
 MCP2515 mcp2515(10);
+
+char filename[15];
+File dbFile;
  
 //Set Up for display and Arduino
-#define DISP_TX_PIN   18    //TX1 ON MEGA
-#define DISP_RX_PIN   19    //RX1 ON MEGA
-#define DISP_RST_PIN   4    //D4 ON MEGA (RESET PIN)
+//Some of these are being changed because their pins are in use
+#define DISP_TX_PIN   16    //TX2 ON MEGA
+#define DISP_RX_PIN   17    //RX2 ON MEGA
+#define DISP_RST_PIN   5    //D4 ON MEGA (RESET PIN)
 #define DISP_BAUD    115200   //BAUD RATE OF DISPLAY
-#define DISP_SERIAL  Serial1
+#define DISP_SERIAL  Serial2
 
 //Index for Display Elements
 #define IDX_COOL_IN       0
@@ -61,6 +65,11 @@ int lastOilPress = 0;
 Genie genie;
  
 void setup() {
+  delay(1000);
+
+  //sd card prep function
+  prep_sdcard();
+
   //reset
   pinMode(DISP_RST_PIN, OUTPUT);
   digitalWrite(DISP_RST_PIN, LOW);
@@ -92,15 +101,16 @@ void loop() {
 
   sensor_decoding();
 
-  if(rpm >= 11000){
-    shiftAlertState = true;
-  }else{
-    shiftAlertState = false;
-  }
-
   fail_alerts();
 
   genie.DoEvents();
+
+  if (millis() > 20000) { // We will need to determine a better way to know how long to collect data for or customize it on a per test basis
+    dbFile.close();
+    Serial.println("Data written to SD card; safe to remove");
+    while (1) {}; // PLEASE JUST STOP THE LOOP I HATE IT HERE 
+  }
+
   digitalWrite(10, HIGH);
 }
 
@@ -145,11 +155,20 @@ void sensor_decoding() {
       break;
     default:
       // Needs to be changed
-      genie.WriteObject(GENIE_OBJ_LED_DIGITS, IDX_RPM, sensor_data);
+      Serial.println("Default case used something broken");
+      break;
     }
 }
 
 void fail_alerts() {
+
+  //rpm alerts
+  if(rpm >= 11000){
+    shiftAlertState = true;
+  }else{
+    shiftAlertState = false;
+  }
+
   //Gear Shift Alert
   if(shiftAlertState == true){
     if(millis() - lastShiftBlinkTimeOn >= blinkIntervalOn){
@@ -166,12 +185,14 @@ void fail_alerts() {
     stateShiftAlert = 0;
     genie.WriteObject(GENIE_OBJ_ILED, 0, stateShiftAlert);
   }
+
   //Sensor Failure
   if(lastFuelPress >= 100 || lastOilPress >= 100 || lastOilPress <= 0){
     sensorFailureState = true;
   }else{
     sensorFailureState = false;
   }
+  
   //Checking if the sensor did fail
   if(sensorFailureState == true){
     if(millis() - lastSensorBlinkTimeOn >= blinkIntervalOn){
@@ -187,6 +208,54 @@ void fail_alerts() {
   }else if(stateSensorAlert != 0){
     stateSensorAlert = 0;
     genie.WriteObject(GENIE_OBJ_ILED, 1, stateSensorAlert);
+  }
+}
+
+void generateFilename() {
+  int fileNumber = 0;
+  bool fileExists = true;
+
+  // Generate a unique filename
+  while (fileExists) {
+    sprintf(filename, "data%03d.csv", fileNumber);
+    if (!SD.exists(filename)) {
+      fileExists = false;
+    } else {
+      fileNumber++;
+    }
+  }
+}
+
+void prep_sdcard() {
+  if (!SD.begin(chipSelect)) {
+    Serial.println("SD card initialization failed!");
+  }
+  Serial.println("SD card initialized.");
+  generateFilename();
+  dbFile = SD.open(filename, FILE_WRITE);
+  if (dbFile) {
+    // Write the CSV header lines
+    dbFile.println("ms,RR Damper,RL Damper,FR Damper,FL Damper,Steering,");
+  } else {
+    Serial.println("Failed to open file for writing.");
+  }
+}
+
+void write_sdcard() {
+  if (dbFile) { //prints rows
+    dbFile.print(millis());
+    dbFile.print(",");
+    dbFile.print(analogRead(A0)); //RRDamper
+    dbFile.print(",");
+    dbFile.print(analogRead(A1)); //RLDamper
+    dbFile.print(",");
+    dbFile.print(analogRead(A2)); //FR Damper
+    dbFile.print(",");
+    dbFile.print(analogRead(A3)); //FL Damper
+    dbFile.print(",");
+    dbFile.println(analogRead(A4)); //Steering Sensor
+  } else {
+    Serial.println("error writing row to file");
   }
 }
 
